@@ -6,8 +6,39 @@
   "engines": {
     "vscode": "^1.90.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ekinertac/vscode-switch-font.git"
+  },
+  "publisher": "ekinertac",
+  "author": {
+    "name": "Ekin Ertaç",
+    "email": "ekinertac@gmail.com"
+  },
+  "icon": "images/icon.png",
+  "license": "MIT",
+  "homepage": "https://github.com/ekinertac/vscode-switch-font",
+  "bugs": {
+    "email": "ekinertac@gmail.com",
+    "url": "https://github.com/ekinertac/vscode-switch-font/issues"
+  },
   "categories": [
+    "Themes",
     "Other"
+  ],
+  "galleryBanner": {
+    "color": "#FFB732",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "keywords": [
+    "font",
+    "monospaced",
+    "font switcher",
+    "font family",
+    "font changer",
+    "font selector",
+    "font picker"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
