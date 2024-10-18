@@ -53,6 +53,13 @@ const parseMonospacedFonts = (output: string, platform: string): string[] => {
 // Function to handle font selection using QuickPick
 const handleFontSelection = async (fonts: string[], config: vscode.WorkspaceConfiguration, originalFont: string | undefined) => {
     const fontQuickPick = vscode.window.createQuickPick();
+
+    // Add the current active font to the top of the list
+    const firstFontinOriginalFont = originalFont?.split(',')[0].trim();
+    if (firstFontinOriginalFont) {
+        fonts.unshift(`Current Font: ${firstFontinOriginalFont}`);
+    }
+
     fontQuickPick.items = fonts.map(font => ({ label: font }));
     fontQuickPick.placeholder = 'Select a monospaced font';
 
@@ -66,8 +73,8 @@ const handleFontSelection = async (fonts: string[], config: vscode.WorkspaceConf
     // Handle font selection change
     fontQuickPick.onDidChangeActive(items => {
         if (items[0]) {
-            const selectedFont = items[0].label;
-            lastActiveFontIndex = fontQuickPick.items.findIndex(item => item.label === selectedFont);
+            const selectedFont = items[0].label.replace('Current Font: ', '').trim();
+            lastActiveFontIndex = fontQuickPick.items.findIndex(item => item.label === items[0].label);
             const updatedFontFamily = [selectedFont, ...(originalFont ? originalFont.split(',').map(f => f.trim()) : [])]
                 .filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
                 .join(', ');
@@ -77,7 +84,7 @@ const handleFontSelection = async (fonts: string[], config: vscode.WorkspaceConf
 
     // Handle font selection acceptance
     fontQuickPick.onDidAccept(() => {
-        const selectedFont = fontQuickPick.selectedItems[0]?.label;
+        const selectedFont = fontQuickPick.selectedItems[0]?.label.replace('Current Font: ', '').trim();
         if (selectedFont) {
             handleWeightSelection(selectedFont, config, fontQuickPick);
         }
