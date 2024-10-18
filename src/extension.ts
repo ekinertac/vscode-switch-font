@@ -1,18 +1,20 @@
 import * as vscode from 'vscode';
 import { exec } from 'child_process';
 
-// Function to get a list of installed monospaced fonts based on the system
+// Function to get a list of installed monospaced fonts on the system
 const getMonospacedFonts = (): Promise<string[]> => {
     return new Promise((resolve, reject) => {
         const platform = process.platform;
         let command = '';
 
+        // Determine the command to list fonts based on the operating system
         if (platform === 'win32') {
             command = 'reg query "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" /s';
         } else if (platform === 'darwin' || platform === 'linux') {
             command = 'fc-list :spacing=mono --format="%{family[0]}\n" | sort | uniq';
         }
 
+        // Execute the command to get the list of fonts
         exec(command, { maxBuffer: 1024 * 1024 }, (error, stdout) => {
             if (error) {
                 reject(error);
@@ -24,7 +26,7 @@ const getMonospacedFonts = (): Promise<string[]> => {
     });
 };
 
-// Function to parse the list of fonts based on the platform
+// Function to parse the output and extract monospaced fonts
 const parseMonospacedFonts = (output: string, platform: string): string[] => {
     const fonts = new Set<string>();
 
@@ -48,11 +50,93 @@ const parseMonospacedFonts = (output: string, platform: string): string[] => {
     return Array.from(fonts);
 };
 
+// Function to handle font selection using QuickPick
+const handleFontSelection = async (fonts: string[], config: vscode.WorkspaceConfiguration, originalFont: string | undefined) => {
+    const fontQuickPick = vscode.window.createQuickPick();
+    fontQuickPick.items = fonts.map(font => ({ label: font }));
+    fontQuickPick.placeholder = 'Select a monospaced font';
+
+    let lastActiveFontIndex: number | undefined;
+
+    // Restore last active font selection if available
+    if (lastActiveFontIndex !== undefined) {
+        fontQuickPick.activeItems = [fontQuickPick.items[lastActiveFontIndex]];
+    }
+
+    // Handle font selection change
+    fontQuickPick.onDidChangeActive(items => {
+        if (items[0]) {
+            const selectedFont = items[0].label;
+            lastActiveFontIndex = fontQuickPick.items.findIndex(item => item.label === selectedFont);
+            const updatedFontFamily = [selectedFont, ...(originalFont ? originalFont.split(',').map(f => f.trim()) : [])]
+                .filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
+                .join(', ');
+            config.update('fontFamily', updatedFontFamily, vscode.ConfigurationTarget.Global);
+        }
+    });
+
+    // Handle font selection acceptance
+    fontQuickPick.onDidAccept(() => {
+        const selectedFont = fontQuickPick.selectedItems[0]?.label;
+        if (selectedFont) {
+            handleWeightSelection(selectedFont, config, fontQuickPick);
+        }
+    });
+
+    // Handle font selection hiding
+    fontQuickPick.onDidHide(() => {
+        if (!fontQuickPick.selectedItems.length && originalFont) {
+            config.update('fontFamily', originalFont, vscode.ConfigurationTarget.Global);
+        }
+        fontQuickPick.dispose();
+    });
+
+    fontQuickPick.show();
+};
+
+// Function to handle weight selection using QuickPick
+const handleWeightSelection = (selectedFont: string, config: vscode.WorkspaceConfiguration, fontQuickPick: vscode.QuickPick<vscode.QuickPickItem>) => {
+    const weightQuickPick = vscode.window.createQuickPick();
+    const fontWeights = ['normal', 'bold', '100', '200', '300', '400', '500', '600', '700', '800', '900'];
+    weightQuickPick.items = fontWeights.map(weight => ({ label: weight }));
+    weightQuickPick.placeholder = `Select a font weight for ${selectedFont}`;
+
+    // Function to apply the selected font weight
+    const applyWeight = (weight: string | undefined) => {
+        if (weight) {
+            config.update('fontWeight', weight, vscode.ConfigurationTarget.Global);
+        }
+    };
+
+    // Handle weight selection change
+    weightQuickPick.onDidChangeActive(weightItems => {
+        const selectedWeight = weightItems[0]?.label;
+        applyWeight(selectedWeight);
+    });
+
+    // Handle weight selection acceptance
+    weightQuickPick.onDidAccept(() => {
+        const selectedWeight = weightQuickPick.selectedItems[0]?.label;
+        applyWeight(selectedWeight);
+        weightQuickPick.dispose();
+    });
+
+    // Handle weight selection hiding (return to font selection)
+    weightQuickPick.onDidHide(() => {
+        if (!weightQuickPick.selectedItems.length) {
+            fontQuickPick.show();
+        }
+        weightQuickPick.dispose();
+    });
+
+    weightQuickPick.show();
+    fontQuickPick.hide();
+};
+
 // VS Code command to list and select a monospaced font
 export function activate(context: vscode.ExtensionContext) {
-    let originalFont: string | undefined;
-
-    let disposable = vscode.commands.registerCommand('extension.selectMonospacedFont', async () => {
+    // Register the command to select a monospaced font
+    const disposable = vscode.commands.registerCommand('extension.selectMonospacedFont', async () => {
         try {
             const fonts = await getMonospacedFonts();
             if (fonts.length === 0) {
@@ -61,60 +145,18 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const config = vscode.workspace.getConfiguration('editor');
-            originalFont = config.get<string>('fontFamily');
+            const originalFont = config.get<string>('fontFamily');
 
-            const quickPick = vscode.window.createQuickPick();
-            quickPick.items = fonts.map(font => ({ label: font }));
-            quickPick.placeholder = 'Select a monospaced font';
-
-            quickPick.onDidChangeActive(items => {
-                if (items[0]) {
-                    const selectedFont = items[0].label;
-                    const updatedFontFamily = [selectedFont, ...(originalFont ? originalFont.split(',').map(f => f.trim()) : [])]
-                        .filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
-                        .join(', ');
-                    config.update('fontFamily', updatedFontFamily, vscode.ConfigurationTarget.Global);
-                }
-            });
-
-            quickPick.onDidAccept(async () => {
-                const selectedFont = quickPick.selectedItems[0]?.label;
-                if (selectedFont) {
-                    const fontWeights = ['normal', 'bold', '100', '200', '300', '400', '500', '600', '700', '800', '900'];
-                    const weightQuickPick = vscode.window.createQuickPick();
-                    weightQuickPick.items = fontWeights.map(weight => ({ label: weight }));
-                    weightQuickPick.placeholder = `Select a font weight for ${selectedFont}`;
-
-                    weightQuickPick.onDidAccept(() => {
-                        const selectedWeight = weightQuickPick.selectedItems[0]?.label;
-                        if (selectedWeight) {
-                            config.update('fontWeight', selectedWeight, vscode.ConfigurationTarget.Global);
-                        }
-                        weightQuickPick.dispose();
-                    });
-
-                    weightQuickPick.onDidHide(() => {
-                        weightQuickPick.dispose();
-                    });
-
-                    weightQuickPick.show();
-                }
-            });
-
-            quickPick.onDidHide(() => {
-                if (!quickPick.selectedItems.length && originalFont) {
-                    config.update('fontFamily', originalFont, vscode.ConfigurationTarget.Global);
-                }
-                quickPick.dispose();
-            });
-
-            quickPick.show();
+            // Handle font selection
+            await handleFontSelection(fonts, config, originalFont);
         } catch (error) {
-            vscode.window.showErrorMessage(`Error fetching fonts: ${error.message}`);
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            vscode.window.showErrorMessage(`Error fetching fonts: ${errorMessage}`);
         }
     });
 
     context.subscriptions.push(disposable);
 }
 
+// Function called when the extension is deactivated
 export function deactivate() {}
